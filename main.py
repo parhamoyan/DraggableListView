@@ -2,18 +2,20 @@ import sys
 from typing import Optional
 
 from PySide6.QtCore import QSize
+from PySide6.QtGui import QScreen
 from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout
 
 from DraggableListView import DraggableListView
+from qutewindow import QuteWindow
 
 
-class Window(QWidget):
+class Window(QuteWindow):
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
-        self.setMinimumSize(QSize(800, 800))
+        self.resize(QSize(800, 600))
         self.verticalLayout = QVBoxLayout(self)
         self.verticalLayout.setContentsMargins(40, 40, 40, 40)
-        self.setStyleSheet("background-color: #0E0F21;")
+        self.setStyleSheet("background-color: #F5F5F5;")
         self.listView = DraggableListView()
         self.verticalLayout.addWidget(self.listView)
         self.listView.setStyleSheet("""
@@ -26,7 +28,7 @@ QScrollBar:vertical {
 }
 /*  HANDLE BAR VERTICAL */
 QScrollBar::handle:vertical {
-    background-color: #21243F;
+    background-color: #CCCCCC;
     min-height: 30px;
     border-radius: 3px;
     margin-top: 0px;
@@ -130,6 +132,13 @@ QComboBox QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
     background: none;
 }
 """)
+        self.center()
+
+    def center(self):
+        center = QScreen.availableGeometry(QApplication.primaryScreen()).center()
+        fg = self.frameGeometry()
+        fg.moveCenter(center)
+        self.move(fg.topLeft())
 
 
 if __name__ == "__main__":

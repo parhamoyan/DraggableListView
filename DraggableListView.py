@@ -44,12 +44,15 @@ class DraggableListView(QWidget):
         self.dragged_y_offset: float = 0
         self.current_animated_items = list()
 
-        self.colors = ['#213D30', '#4E6E58', '#8AAE92', '#FFF9EC', '#F6D167', '#F89D2A', '#AB3428', '#E65A4C', '#F8B195', '#F67280']
-        count = len(self.colors)
-        for i in range(count):
+        self.colors = ["#ADD8E6", "#90EE90", "#FFFFE0", "#FFC0CB", "#BA55D3", "#87CEFA", "#FFE4E1", "#FFDAB9", "#B0C4DE", "#FFA07A"]
+
+        for i in range(len(self.colors)):
             self.addItem(i)
 
-        self.setAcceptDrops(True)
+        self._row_height = 60
+
+    def rowHeight(self) -> int:
+        return self._row_height
 
     def scroll_bar_value_changed(self, value) -> None:
         self.update()
@@ -62,10 +65,10 @@ class DraggableListView(QWidget):
         _rect = QRect(0, 0, 8, self.rect().height())
         _rect.moveRight(self.rect().right())
         self.scroll_bar.setGeometry(_rect)
-        self.scroll_bar.setRange(0, 60 * len(self.items_by_id) - self.height())
+        self.scroll_bar.setRange(0, self.rowHeight() * len(self.items_by_id) - self.height())
 
     def getIndexRect(self, index: int) -> QRect:
-        _rect = QRect(0, index * 60 - self.scroll_bar.value(), self.width(), 60)
+        _rect = QRect(0, index * self.rowHeight() - self.scroll_bar.value(), self.width(), 60)
         return _rect
 
     def addItem(self, i) -> None:
@@ -78,7 +81,7 @@ class DraggableListView(QWidget):
         self.update()
 
     def indexAt(self, pos: QPoint) -> int:
-        index = (pos.y() + self.scroll_bar.value()) // 60
+        index = (pos.y() + self.scroll_bar.value()) // self.rowHeight()
         return int(index)
 
     def rowCount(self) -> int:
@@ -112,8 +115,8 @@ class DraggableListView(QWidget):
         super().mouseMoveEvent(event)
         if self.inner_drag_is_active:
             y_diff = event.position().y() - self.inner_drag_start_position.y()
-            self.dragged_y_pos = y_diff + self.dragged_item_row * 60
-            new_shift_value = int((y_diff+30)//60)
+            self.dragged_y_pos = y_diff + self.dragged_item_row * self.rowHeight() - self.scroll_bar.value()
+            new_shift_value = int((y_diff+30)//self.rowHeight())
             new_drop_row = new_shift_value + self.dragged_item_row
             if new_drop_row < 0:
                 new_drop_row = 0
@@ -126,7 +129,8 @@ class DraggableListView(QWidget):
                 item_id = item_index.item_id
                 self.animation = QVariantAnimation(self)
                 self.animation.setStartValue(item_index.item_style.y_offset)
-                self.animation.setDuration(200)
+                self.animation.setDuration(300)
+                self.animation.setEasingCurve(QEasingCurve.Type.OutSine)
 
                 if self.current_drop_row < previous_drop_row:
                     if self.current_drop_row >= self.dragged_item_row:
@@ -140,7 +144,7 @@ class DraggableListView(QWidget):
                         item_index: Index = self.items_list[row]
                         item_id = item_index.item_id
                         self.animation.setStartValue(item_index.item_style.y_offset)
-                        self.animation.setEndValue(60)
+                        self.animation.setEndValue(self.rowHeight())
                 else:
                     if self.current_drop_row <= self.dragged_item_row:
                         row = self.current_drop_row - 1
@@ -153,7 +157,7 @@ class DraggableListView(QWidget):
                         item_index: Index = self.items_list[row]
                         item_id = item_index.item_id
                         self.animation.setStartValue(item_index.item_style.y_offset)
-                        self.animation.setEndValue(-60)
+                        self.animation.setEndValue(-self.rowHeight())
 
                 def value_changed(new_value):
                     self.items_by_id[item_id].item_style.y_offset = new_value
@@ -215,10 +219,10 @@ class DraggableListView(QWidget):
             item_style = self.items_list[i].item_style
             sum_offset += item_style.y_offset
             _rect = self.getIndexRect(i)
-            real_rect = QRect(0, i * 60 - self.scroll_bar.value() + sum_offset, self.width(), 60)
-            if not real_rect.intersects(self.rect()):
-                i += 1
-                continue
+            real_rect = QRect(0, i * self.rowHeight() - self.scroll_bar.value() + sum_offset, self.width(), self.rowHeight())
+            # if not real_rect.intersects(self.rect()):
+            #     i += 1
+            #     continue
             if self.dragged_item_row == i:
                 i += 1
                 continue
@@ -230,7 +234,7 @@ class DraggableListView(QWidget):
         painter.restore()
 
         if self.inner_drag_is_active or self.reorder_is_active:
-            _rect = QRect(0, self.dragged_y_pos, self.width(), 60)
+            _rect = QRect(0, self.dragged_y_pos, self.width(), self.rowHeight())
             delegate.paint(painter, _rect, self.dragged_item_style, self.dragged_item)
 
         painter.end()
