@@ -44,8 +44,8 @@ class DraggableListView(QWidget):
         self.dragged_y_offset: float = 0
         self.current_animated_items = list()
 
-        self.colors = [QColor("#071E22"), QColor("#1D7874"), QColor("#679289"), QColor("#F4C095"), QColor("#EE2E31")]
-        count = 5
+        self.colors = ['#213D30', '#4E6E58', '#8AAE92', '#FFF9EC', '#F6D167', '#F89D2A', '#AB3428', '#E65A4C', '#F8B195', '#F67280']
+        count = len(self.colors)
         for i in range(count):
             self.addItem(i)
 
@@ -165,13 +165,15 @@ class DraggableListView(QWidget):
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
         super().mouseReleaseEvent(event)
+        self.inner_drag_is_active = False
+        self.reorder_is_active = True
         destination_y = self.getIndexRect(self.current_drop_row).y()
         self.reorder_animation = QVariantAnimation(self)
         start_value = float(self.dragged_y_pos)
         end_value = float(destination_y)
         self.reorder_animation.setStartValue(start_value)
         self.reorder_animation.setEndValue(end_value)
-        self.reorder_animation.setDuration(100)
+        self.reorder_animation.setDuration(200)
         self.reorder_animation.setEasingCurve(QEasingCurve.Type.InOutSine)
 
         def update_value(new_value: float):
@@ -186,13 +188,14 @@ class DraggableListView(QWidget):
                 self.items_list[row].item_style.y_offset = 0
             self.items_list.insert(self.current_drop_row, item_to_be_moved)
 
-            self.inner_drag_is_active = False
+            self.reorder_is_active = False
             self.inner_drag_start_position = QPoint()
             self.dragged_item = None
             self.dragged_item_style = None
             self.dragged_item_row = None
             self.current_drop_row = None
             self.dragged_item_key = None
+            self.update()
 
         self.reorder_animation.finished.connect(finished)
         self.reorder_animation.start()
@@ -226,7 +229,7 @@ class DraggableListView(QWidget):
             i += 1
         painter.restore()
 
-        if self.inner_drag_is_active:
+        if self.inner_drag_is_active or self.reorder_is_active:
             _rect = QRect(0, self.dragged_y_pos, self.width(), 60)
             delegate.paint(painter, _rect, self.dragged_item_style, self.dragged_item)
 
