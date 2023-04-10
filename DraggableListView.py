@@ -2,7 +2,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Optional, List, Dict
 
-from PySide6.QtCore import QRect, QVariantAnimation, QPoint, QEasingCurve, QParallelAnimationGroup
+from PySide6.QtCore import QRect, QVariantAnimation, QPoint, QEasingCurve, QParallelAnimationGroup, QAbstractAnimation
 from PySide6.QtGui import QPaintEvent, QPainter, Qt, QResizeEvent, QWheelEvent, QMouseEvent, QColor
 from PySide6.QtWidgets import QWidget
 
@@ -27,7 +27,7 @@ class DraggableListView(QWidget):
         self.scroll_bar.valueChanged.connect(self.scroll_bar_value_changed)
         self.scroll_bar.raise_()
         self.setMouseTracking(True)
-        self.animation_map = dict()
+        self.animation_map: Dict[int, QVariantAnimation] = dict()
 
         self.current_combobox = None
 
@@ -43,6 +43,8 @@ class DraggableListView(QWidget):
         self.current_drop_row = None
         self.dragged_y_offset: float = 0
         self.current_animated_items = list()
+
+        self.animation = None
 
         self.colors = ["#ADD8E6", "#90EE90", "#FFFFE0", "#FFC0CB", "#BA55D3", "#87CEFA", "#FFE4E1", "#FFDAB9", "#B0C4DE", "#FFA07A"]
 
@@ -127,42 +129,40 @@ class DraggableListView(QWidget):
                 self.current_drop_row = new_drop_row
                 item_index: Index = self.items_list[self.current_drop_row]
                 item_id = item_index.item_id
-                self.animation = QVariantAnimation(self)
-                self.animation.setStartValue(item_index.item_style.y_offset)
-                self.animation.setDuration(300)
-                self.animation.setEasingCurve(QEasingCurve.Type.OutSine)
+                animation = QVariantAnimation(self)
+                animation.setDuration(500)
+                animation.setEasingCurve(QEasingCurve.Type.OutSine)
 
                 if self.current_drop_row < previous_drop_row:
                     if self.current_drop_row >= self.dragged_item_row:
                         row = self.current_drop_row + 1
-                        item_index: Index = self.items_list[row]
-                        item_id = item_index.item_id
-                        self.animation.setStartValue(item_index.item_style.y_offset)
-                        self.animation.setEndValue(0)
+                        end_value = 0
                     else:
                         row = self.current_drop_row
-                        item_index: Index = self.items_list[row]
-                        item_id = item_index.item_id
-                        self.animation.setStartValue(item_index.item_style.y_offset)
-                        self.animation.setEndValue(self.rowHeight())
+                        end_value = self.rowHeight()
                 else:
                     if self.current_drop_row <= self.dragged_item_row:
                         row = self.current_drop_row - 1
-                        item_index: Index = self.items_list[row]
-                        item_id = item_index.item_id
-                        self.animation.setStartValue(item_index.item_style.y_offset)
-                        self.animation.setEndValue(0)
+                        end_value = 0
                     else:
                         row = self.current_drop_row
-                        item_index: Index = self.items_list[row]
-                        item_id = item_index.item_id
-                        self.animation.setStartValue(item_index.item_style.y_offset)
-                        self.animation.setEndValue(-self.rowHeight())
+                        end_value = -self.rowHeight()
+                item_index: Index = self.items_list[row]
+                item_id = item_index.item_id
+                animation.setStartValue(item_index.item_style.y_offset)
+                animation.setEndValue(end_value)
 
                 def value_changed(new_value):
                     self.items_by_id[item_id].item_style.y_offset = new_value
                     self.update()
-                self.animation.valueChanged.connect(value_changed)
+
+                animation.valueChanged.connect(value_changed)
+                if row in self.animation_map:
+                    current_animation: QVariantAnimation = self.animation_map[row]
+                    if current_animation.state() == QAbstractAnimation.Running:
+                        current_animation.stop()
+                self.animation_map[row] = animation
+                self.animation = animation
                 self.animation.start()
 
             self.update()
@@ -177,7 +177,7 @@ class DraggableListView(QWidget):
         end_value = float(destination_y)
         self.reorder_animation.setStartValue(start_value)
         self.reorder_animation.setEndValue(end_value)
-        self.reorder_animation.setDuration(200)
+        self.reorder_animation.setDuration(500)
         self.reorder_animation.setEasingCurve(QEasingCurve.Type.InOutSine)
 
         def update_value(new_value: float):
