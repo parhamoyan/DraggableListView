@@ -4,9 +4,9 @@ from typing import Optional
 from PySide6.QtCore import QSize
 from PySide6.QtGui import QScreen
 from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout
+from qutewindow import QuteWindow
 
 from DraggableListView import DraggableListView
-from qutewindow import QuteWindow
 
 
 class Window(QuteWindow):
@@ -15,9 +15,10 @@ class Window(QuteWindow):
         self.resize(QSize(800, 600))
         self.verticalLayout = QVBoxLayout(self)
         self.verticalLayout.setContentsMargins(40, 40, 40, 40)
-        self.setStyleSheet("background-color: #F5F5F5;")
+        self.setStyleSheet("background-color: #333333;")
         self.listView = DraggableListView()
         self.verticalLayout.addWidget(self.listView)
+        # TEMP
         self.listView.setStyleSheet("""
 /* VERTICAL SCROLLBAR */
 QScrollBar:vertical {
@@ -54,6 +55,49 @@ QScrollBar::up-arrow:vertical, QScrollBar::down-arrow:vertical {
     background: none;
 }
 QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+    background: none;
+}
+
+/* HORIZONTAL SCROLLBAR */
+QScrollBar:horizontal {
+    border: none;
+    background-color: transparent;
+    height: 6px;
+    border-radius: 3px;
+}
+
+/* HANDLE BAR HORIZONTAL */
+QScrollBar::handle:horizontal {
+    background-color: #CCCCCC;
+    min-width: 30px;
+    border-radius: 3px;
+    margin-left: 0px;
+}
+
+/* BTN LEFT - SCROLLBAR */
+QScrollBar::sub-line:horizontal {
+    border: none;
+    background-color: #222327;
+    width: 0px;
+    subcontrol-position: left;
+    subcontrol-origin: margin;
+}
+
+/* BTN RIGHT - SCROLLBAR */
+QScrollBar::add-line:horizontal {
+    border: none;
+    background-color: #222327;
+    width: 0px;
+    subcontrol-position: right;
+    subcontrol-origin: margin;
+}
+
+/* RESET ARROW */
+QScrollBar::left-arrow:horizontal, QScrollBar::right-arrow:horizontal {
+    background: none;
+}
+
+QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
     background: none;
 }
 

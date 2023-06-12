@@ -1,0 +1,2 @@
+PySide6==6.5.0
+qutewindow==0.1.27

@@ -1,9 +1,10 @@
 import uuid
 from dataclasses import dataclass
+from enum import Enum, auto
 from typing import Optional, List, Dict
 
-from PySide6.QtCore import QRect, QVariantAnimation, QPoint, QEasingCurve, QParallelAnimationGroup, QAbstractAnimation
-from PySide6.QtGui import QPaintEvent, QPainter, Qt, QResizeEvent, QWheelEvent, QMouseEvent, QColor
+from PySide6.QtCore import QRect, QVariantAnimation, QPoint, QEasingCurve, QAbstractAnimation, QObject
+from PySide6.QtGui import QPaintEvent, QPainter, Qt, QResizeEvent, QWheelEvent, QMouseEvent
 from PySide6.QtWidgets import QWidget
 
 from CustomScrollBar import CustomScrollBar
@@ -18,6 +19,11 @@ class Index:
     item_id: uuid.UUID
 
 
+class Flow(Enum):
+    TopToBottom = auto()
+    LeftToRight = auto()
+
+
 class DraggableListView(QWidget):
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -28,6 +34,7 @@ class DraggableListView(QWidget):
         self.scroll_bar.raise_()
         self.setMouseTracking(True)
         self.animation_map: Dict[int, QVariantAnimation] = dict()
+        self.reorder_animation: Optional[QVariantAnimation] = None
 
         self.current_combobox = None
 
@@ -37,7 +44,7 @@ class DraggableListView(QWidget):
         self.dragged_item_style = None
         self.dragged_item = None
         self.current_shift_value = 0
-        self.dragged_y_pos: float = 0
+        self.dragged_pos: float = 0
         self.dragged_item_key = None
         self.dragged_item_row = None
         self.current_drop_row = None
@@ -49,12 +56,43 @@ class DraggableListView(QWidget):
         self.colors = ["#ADD8E6", "#90EE90", "#FFFFE0", "#FFC0CB", "#BA55D3", "#87CEFA", "#FFE4E1", "#FFDAB9", "#B0C4DE", "#FFA07A"]
 
         for i in range(len(self.colors)):
-            self.addItem(i)
+            self.addItem(Item(self.colors[i]))
 
         self._row_height = 60
+        self._row_width = 120
+
+        self.setFlow(Flow.TopToBottom)
+
+        self.delegate = Delegate(self)
+        self._spacing = 10
+
+    def spacing(self) -> float:
+        return self._spacing
+
+    def setSpacing(self, value) -> None:
+        self._spacing = value
+        self.update()
+
+    def setDelegate(self, delegate: QObject) -> None:
+        self.delegate = delegate
+        self.update()
+
+    def setFlow(self, flow: Flow):
+        self._flow = flow
+        if flow == Flow.TopToBottom:
+            self.scroll_bar.setOrientation(Qt.Orientation.Vertical)
+        else:
+            self.scroll_bar.setOrientation(Qt.Orientation.Horizontal)
+        self.update()
+
+    def flow(self) -> Flow:
+        return self._flow
 
     def rowHeight(self) -> int:
-        return self._row_height
+        return self.delegate.sizeHint().height()
+
+    def rowWidth(self) -> int:
+        return self.delegate.sizeHint().width()
 
     def scroll_bar_value_changed(self, value) -> None:
         self.update()
@@ -64,18 +102,32 @@ class DraggableListView(QWidget):
         self.scroll_bar.wheelEvent(event)
 
     def resizeEvent(self, event: QResizeEvent) -> None:
-        _rect = QRect(0, 0, 8, self.rect().height())
-        _rect.moveRight(self.rect().right())
-        self.scroll_bar.setGeometry(_rect)
-        self.scroll_bar.setRange(0, self.rowHeight() * len(self.items_by_id) - self.height())
+        if self.flow() == Flow.TopToBottom:
+            _rect = QRect(0, 0, 8, self.rect().height())
+            _rect.moveRight(self.rect().right())
+            self.scroll_bar.setGeometry(_rect)
+            self.scroll_bar.setRange(0, self.rowHeight() * len(self.items_by_id) - self.height())
+        else:
+            _rect = QRect(0, 0, self.rect().width(), 8)
+            _rect.moveBottom(self.rect().bottom())
+            self.scroll_bar.setGeometry(_rect)
+            self.scroll_bar.setRange(0, self.rowWidth() * len(self.items_by_id) - self.width())
 
     def getIndexRect(self, index: int) -> QRect:
-        _rect = QRect(0, index * self.rowHeight() - self.scroll_bar.value(), self.width(), 60)
-        return _rect
+        if self.flow() == Flow.TopToBottom:
+            x = self.spacing()
+            y = index * self.rowHeight() + self.spacing() * index - self.scroll_bar.value()
+            w = self.rowWidth()
+            h = self.rowHeight() - self.spacing()
+        else:
+            x = index * self.rowWidth() - self.scroll_bar.value() + self.spacing() * index
+            y = self.spacing()
+            w = self.rowWidth()
+            h = self.rowHeight() - self.spacing()
+        return QRect(x, y, w, h)
 
-    def addItem(self, i) -> None:
-        item = Item(self.colors[i])
-        item_style = Style(y_offset=0)
+    def addItem(self, item) -> None:
+        item_style = Style(offset=0)
         item_id = uuid.uuid4()
         index = Index(item, item_style, item_id)
         self.items_list.append(index)
@@ -83,7 +135,10 @@ class DraggableListView(QWidget):
         self.update()
 
     def indexAt(self, pos: QPoint) -> int:
-        index = (pos.y() + self.scroll_bar.value()) // self.rowHeight()
+        if self.flow() == Flow.TopToBottom:
+            index = (pos.y() + self.scroll_bar.value()) // self.rowHeight()
+        else:
+            index = (pos.x() + self.scroll_bar.value()) // self.rowWidth()
         return int(index)
 
     def rowCount(self) -> int:
@@ -100,10 +155,11 @@ class DraggableListView(QWidget):
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
         super().mousePressEvent(event)
+        if self.reorder_is_active:
+            return
         index = self.indexAt(event.position())
         if not 0 <= index < len(self.items_by_id):
             return
-
         if event.button() == Qt.LeftButton:
             self.inner_drag_is_active = True
             self.inner_drag_start_position = event.pos()
@@ -113,12 +169,23 @@ class DraggableListView(QWidget):
             self.current_drop_row = index
             self.current_shift_value = self.dragged_item_row
 
+    def get_shift_value(self, cursor_pos: QPoint) -> float:
+        if self.flow() == Flow.TopToBottom:
+            y_diff = cursor_pos.y() - self.inner_drag_start_position.y()
+            self.dragged_pos = y_diff + self.dragged_item_row * self.rowHeight() - self.scroll_bar.value()
+            new_shift_value = int((y_diff + self.rowHeight() // 2) // self.rowHeight())
+        else:
+            x_diff = cursor_pos.position().x() - self.inner_drag_start_position.x()
+            self.dragged_pos = x_diff + self.dragged_item_row * self.rowWidth() - self.scroll_bar.value()
+            new_shift_value = int((x_diff + self.rowWidth() // 2) // self.rowWidth())
+        return new_shift_value
+
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
         super().mouseMoveEvent(event)
+        if self.reorder_is_active:
+            return
         if self.inner_drag_is_active:
-            y_diff = event.position().y() - self.inner_drag_start_position.y()
-            self.dragged_y_pos = y_diff + self.dragged_item_row * self.rowHeight() - self.scroll_bar.value()
-            new_shift_value = int((y_diff+30)//self.rowHeight())
+            new_shift_value = self.get_shift_value(event.position())
             new_drop_row = new_shift_value + self.dragged_item_row
             if new_drop_row < 0:
                 new_drop_row = 0
@@ -127,61 +194,76 @@ class DraggableListView(QWidget):
             if new_drop_row != self.current_drop_row:
                 previous_drop_row = self.current_drop_row
                 self.current_drop_row = new_drop_row
-                item_index: Index = self.items_list[self.current_drop_row]
-                item_id = item_index.item_id
-                animation = QVariantAnimation(self)
-                animation.setDuration(500)
-                animation.setEasingCurve(QEasingCurve.Type.OutSine)
-
                 if self.current_drop_row < previous_drop_row:
                     if self.current_drop_row >= self.dragged_item_row:
-                        row = self.current_drop_row + 1
+                        animated_row = self.current_drop_row + 1
                         end_value = 0
                     else:
-                        row = self.current_drop_row
-                        end_value = self.rowHeight()
+                        animated_row = self.current_drop_row
+                        if self.flow() == Flow.TopToBottom:
+                            end_value = self.rowHeight() + self.spacing()
+                        else:
+                            end_value = self.rowWidth() + self.spacing()
                 else:
                     if self.current_drop_row <= self.dragged_item_row:
-                        row = self.current_drop_row - 1
+                        animated_row = self.current_drop_row - 1
                         end_value = 0
                     else:
-                        row = self.current_drop_row
-                        end_value = -self.rowHeight()
-                item_index: Index = self.items_list[row]
-                item_id = item_index.item_id
-                animation.setStartValue(item_index.item_style.y_offset)
-                animation.setEndValue(end_value)
+                        animated_row = self.current_drop_row
+                        if self.flow() == Flow.TopToBottom:
+                            end_value = -(self.rowHeight() + self.spacing())
+                        else:
+                            end_value = -(self.rowWidth() + self.spacing())
 
-                def value_changed(new_value):
-                    self.items_by_id[item_id].item_style.y_offset = new_value
-                    self.update()
-
-                animation.valueChanged.connect(value_changed)
-                if row in self.animation_map:
-                    current_animation: QVariantAnimation = self.animation_map[row]
-                    if current_animation.state() == QAbstractAnimation.Running:
-                        current_animation.stop()
-                self.animation_map[row] = animation
-                self.animation = animation
-                self.animation.start()
+                self.start_offset_animation(animated_row, end_value)
 
             self.update()
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
         super().mouseReleaseEvent(event)
+        if self.reorder_is_active:
+            return
         self.inner_drag_is_active = False
         self.reorder_is_active = True
-        destination_y = self.getIndexRect(self.current_drop_row).y()
+        if self.flow() == Flow.TopToBottom:
+            destination = self.getIndexRect(self.current_drop_row).y()
+        else:
+            destination = self.getIndexRect(self.current_drop_row).x()
         self.reorder_animation = QVariantAnimation(self)
-        start_value = float(self.dragged_y_pos)
-        end_value = float(destination_y)
+        start_value = float(self.dragged_pos)
+        end_value = float(destination)
+        self.start_reorder_animation(start_value, end_value)
+
+    def start_offset_animation(self, row: int, end_value: float):
+        animation = QVariantAnimation(self)
+        animation.setDuration(400)
+        animation.setEasingCurve(QEasingCurve.Type.OutSine)
+        item_index: Index = self.items_list[row]
+        item_id = item_index.item_id
+        animation.setStartValue(item_index.item_style.offset)
+        animation.setEndValue(end_value)
+
+        def value_changed(new_value):
+            self.items_by_id[item_id].item_style.offset = new_value
+            self.update()
+
+        animation.valueChanged.connect(value_changed)
+        if row in self.animation_map:
+            current_animation: QVariantAnimation = self.animation_map[row]
+            if current_animation.state() == QAbstractAnimation.Running:
+                current_animation.stop()
+        self.animation_map[row] = animation
+        self.animation = animation
+        self.animation.start()
+
+    def start_reorder_animation(self, start_value: float, end_value: float):
         self.reorder_animation.setStartValue(start_value)
         self.reorder_animation.setEndValue(end_value)
-        self.reorder_animation.setDuration(500)
+        self.reorder_animation.setDuration(400)
         self.reorder_animation.setEasingCurve(QEasingCurve.Type.InOutSine)
 
         def update_value(new_value: float):
-            self.dragged_y_pos = new_value
+            self.dragged_pos = new_value
             self.update()
 
         self.reorder_animation.valueChanged.connect(update_value)
@@ -189,7 +271,7 @@ class DraggableListView(QWidget):
         def finished():
             item_to_be_moved = self.items_list.pop(self.dragged_item_row)
             for row in range(len(self.items_list)):
-                self.items_list[row].item_style.y_offset = 0
+                self.items_list[row].item_style.offset = 0
             self.items_list.insert(self.current_drop_row, item_to_be_moved)
 
             self.reorder_is_active = False
@@ -202,39 +284,38 @@ class DraggableListView(QWidget):
             self.update()
 
         self.reorder_animation.finished.connect(finished)
-        self.reorder_animation.start()
-
-        self.update()
+        self.reorder_animation.start(QAbstractAnimation.DeletionPolicy.DeleteWhenStopped)
 
     def paintEvent(self, event: QPaintEvent) -> None:
         painter = QPainter(self)
         painter.setPen(Qt.NoPen)
-        delegate = Delegate(self)
 
         painter.save()
-        sum_offset = 0
         i = 0
         for i in range(len(self.items_by_id)):
             item = self.items_list[i].item
             item_style = self.items_list[i].item_style
-            sum_offset += item_style.y_offset
             _rect = self.getIndexRect(i)
-            real_rect = QRect(0, i * self.rowHeight() - self.scroll_bar.value() + sum_offset, self.width(), self.rowHeight())
-            # if not real_rect.intersects(self.rect()):
-            #     i += 1
-            #     continue
             if self.dragged_item_row == i:
                 i += 1
                 continue
             painter.save()
-            painter.translate(QPoint(0, item_style.y_offset))
-            delegate.paint(painter, _rect, item_style, item)
+            if self.flow() == Flow.TopToBottom:
+                painter.translate(QPoint(0, item_style.offset))
+            else:
+                painter.translate(QPoint(item_style.offset, 0))
+            self.delegate.paint(painter, _rect, item_style, item)
             painter.restore()
             i += 1
         painter.restore()
 
         if self.inner_drag_is_active or self.reorder_is_active:
-            _rect = QRect(0, self.dragged_y_pos, self.width(), self.rowHeight())
-            delegate.paint(painter, _rect, self.dragged_item_style, self.dragged_item)
+            if self.flow() == Flow.TopToBottom:
+                _rect = QRect(self.spacing(), self.dragged_pos,
+                              self.rowWidth(), self.rowHeight() - self.spacing())
+            else:
+                _rect = QRect(self.dragged_pos, self.spacing(),
+                              self.rowWidth(), self.rowHeight() - self.spacing())
+            self.delegate.paint(painter, _rect, self.dragged_item_style, self.dragged_item)
 
         painter.end()
